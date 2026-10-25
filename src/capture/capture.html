@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Снимок</title>
+<style>
+  :root {
+    --bg: #0f0f12;
+    --panel: rgba(28, 28, 32, 0.96);
+    --panel-border: rgba(255, 255, 255, 0.08);
+    --text: #f2f2f4;
+    --muted: #b8b8c2;
+    --accent: #d0400f;
+    --radius: 12px;
+    --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 100vw; height: 100vh; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; user-select: none; }
+
+  /* ---- режим выделения ---- */
+  #select { position: fixed; inset: 0; display: none; cursor: crosshair; }
+  #select.active { display: block; }
+  #bgCanvas, #selCanvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #selHint { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--panel-border); padding: 10px 16px; border-radius: 999px; color: var(--text); font-size: 13px; pointer-events: none; box-shadow: 0 8px 30px rgba(0,0,0,.4); }
+  #selHint kbd, .hint kbd { font-family: inherit; background: rgba(255,255,255,.1); padding: 1px 7px; border-radius: 6px; margin: 0 2px; }
+  #selSize { position: absolute; background: var(--panel); color: var(--text); padding: 4px 8px; border-radius: 6px; font-size: 12px; pointer-events: none; display: none; font-variant-numeric: tabular-nums; }
+
+  /* ---- режим редактора ---- */
+  #edit { position: fixed; inset: 0; display: none; flex-direction: column; background: rgba(12, 12, 15, 0.97); }
+  #edit.active { display: flex; }
+  .toolbar { display: flex; justify-content: center; gap: 6px; padding: 14px 16px 0; flex: 0 0 auto; -webkit-app-region: no-drag; }
+  .group { display: flex; gap: 4px; background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 5px; box-shadow: 0 8px 30px rgba(0,0,0,.4); align-items: center; }
+  .tool { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+  .tool:hover { background: rgba(255,255,255,.07); }
+  .tool.active { background: rgba(255, 90, 40, 0.22); color: #ffd2c2; }
+  .tool.active kbd { color: inherit; }
+  .tool svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .tool kbd { font-family: inherit; color: var(--muted); font-size: 11px; background: rgba(255,255,255,.08); padding: 0 6px; border-radius: 5px; line-height: 18px; }
+  .swatch { width: 24px; height: 24px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; margin: 0 2px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.15); }
+  .swatch.active { border-color: #fff; transform: scale(1.1); }
+  .stage { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; padding: 16px 32px; min-height: 0; }
+  #canvasWrap { position: relative; box-shadow: 0 20px 60px rgba(0,0,0,.6); border-radius: 4px; overflow: hidden; background: #000; line-height: 0; }
+  #editCanvas { display: block; cursor: crosshair; }
+  #editCanvas.pen { cursor: crosshair; }
+  .bottom { flex: 0 0 auto; display: flex; justify-content: center; padding: 0 16px 18px; }
+  .bottom-inner { width: min(900px, 100%); display: flex; flex-direction: column; gap: 10px; }
+  .comment-row { display: flex; gap: 10px; align-items: stretch; }
+  .field { position: relative; flex: 1; display: flex; }
+  textarea { flex: 1; min-height: 56px; max-height: 160px; resize: none; background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius); color: var(--text); font: inherit; font-size: 15px; padding: 14px 56px 14px 16px; outline: none; line-height: 1.4; }
+  .field .voice-btn { right: 12px; bottom: 12px; }
+  #msg { text-align: center; color: #ffc9c7; font-size: 12px; min-height: 0; }
+  #msg:empty { display: none; }
+  textarea:focus { border-color: rgba(255, 90, 40, 0.6); }
+  textarea::placeholder { color: var(--muted); }
+  .btn { height: 56px; padding: 0 22px; border: 0; border-radius: var(--radius); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; }
+  .btn kbd { font-family: inherit; font-weight: 500; font-size: 12px; background: rgba(255,255,255,.18); padding: 2px 8px; border-radius: 6px; }
+  .btn.primary { background: var(--accent); color: #fff; }
+  .btn.primary:hover { background: #b5360c; }
+  .btn.ghost { background: var(--panel); color: var(--text); border: 1px solid var(--panel-border); }
+  .btn.ghost:hover { background: rgba(255,255,255,.07); }
+  .hint { text-align: center; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+  <div id="select">
+    <canvas id="bgCanvas"></canvas>
+    <canvas id="selCanvas"></canvas>
+    <div id="selHint">Выдели область мышью &nbsp;·&nbsp; <kbd>Esc</kbd> отмена</div>
+    <div id="selSize"></div>
+  </div>
+
+  <div id="edit">
+    <div class="toolbar">
+      <div class="group" id="tools">
+        <button class="tool active" data-tool="arrow" title="Стрелка (A)">
+          <svg viewBox="0 0 24 24"><path d="M5 19 19 5M19 5h-8M19 5v8"/></svg>Стрелка <kbd>A</kbd>
+        </button>
+        <button class="tool" data-tool="rect" title="Рамка (R)">
+          <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/></svg>Рамка <kbd>R</kbd>
+        </button>
+        <button class="tool" data-tool="num" title="Номер (N)">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M11 9l2-1v8"/></svg>Номер <kbd>N</kbd>
+        </button>
+        <button class="tool" data-tool="pen" title="Карандаш (P)">
+          <svg viewBox="0 0 24 24"><path d="M4 20c4-7 6-9 9-9s2 4 4 4 3-6 3-6"/></svg>Карандаш <kbd>P</kbd>
+        </button>
+      </div>
+      <div class="group" id="colors"></div>
+      <div class="group">
+        <button class="tool" id="undo" title="Отменить (Ctrl+Z)">
+          <svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>Отменить <kbd>Ctrl+Z</kbd>
+        </button>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div id="canvasWrap"><canvas id="editCanvas"></canvas></div>
+    </div>
+
+    <div class="bottom">
+      <div class="bottom-inner">
+        <div class="comment-row">
+          <div class="field">
+            <textarea id="comment" rows="2" placeholder="Что здесь не так или что сделать? Напиши или скажи голосом"></textarea>
+            <button id="mic"></button>
+          </div>
+          <button class="btn ghost" id="cancel">Отмена <kbd>Esc</kbd></button>
+          <button class="btn primary" id="done">Готово <kbd>Enter</kbd></button>
+        </div>
+        <div id="msg"></div>
+        <div class="hint"><kbd>Enter</kbd> готово &nbsp;·&nbsp; <kbd>Ctrl+Пробел</kbd> голос &nbsp;·&nbsp; <kbd>Shift+Enter</kbd> новая строка &nbsp;·&nbsp; <kbd>Ctrl+Z</kbd> отменить разметку &nbsp;·&nbsp; <kbd>Esc</kbd> отмена</div>
+      </div>
+    </div>
+  </div>
+
+  <link rel="stylesheet" href="../shared/voice.css">
+  <script src="../shared/draw.js"></script>
+  <script src="../shared/voice.js"></script>
+  <script src="capture.js"></script>
+</body>
+</html>

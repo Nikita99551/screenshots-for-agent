@@ -1,0 +1,37 @@
+/* Мини-иконка голосового ввода (общая для редактора и панели). */
+.voice-btn {
+  --vb-size: 30px;
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  height: var(--vb-size);
+  min-width: var(--vb-size);
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #d6d6dd;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  cursor: pointer;
+  transition: background .15s, min-width .18s ease, color .15s;
+  z-index: 2;
+}
+.voice-btn:hover { background: rgba(255, 255, 255, 0.15); color: #fff; }
+.voice-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
+.voice-btn .lv, .voice-btn .spin { display: none; }
+
+.voice-btn[data-state="rec"] { min-width: calc(var(--vb-size) * 2); padding: 0 10px; background: #e5322d; color: #fff; }
+.voice-btn[data-state="rec"] svg { display: none; }
+.voice-btn[data-state="rec"] .lv { display: inline-flex; align-items: center; gap: 3px; height: 16px; }
+.voice-btn .lv i { display: block; width: 3px; height: 16px; border-radius: 2px; background: #fff; transform: scaleY(.2); transition: transform 60ms linear; }
+
+.voice-btn[data-state="busy"] { color: #fff; }
+.voice-btn[data-state="busy"] svg { display: none; }
+.voice-btn[data-state="busy"] .spin { display: block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: vb-spin .7s linear infinite; }
+
+.voice-btn[data-state="error"] { background: rgba(229, 50, 45, 0.25); color: #ffc9c7; }
+
+@keyframes vb-spin { to { transform: rotate(360deg); } }

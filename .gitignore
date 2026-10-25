@@ -1,0 +1,8 @@
+node_modules/
+dist/
+build/python/
+build/python-embed.zip
+stt/.venv/
+__pycache__/
+*.log
+.impeccable/

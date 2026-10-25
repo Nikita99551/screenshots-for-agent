@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Скриншоты для агента</title>
+<style>
+  :root {
+    --bg: #17171a;
+    --card: #202024;
+    --card-border: rgba(255,255,255,0.07);
+    --text: #f2f2f4;
+    --muted: #a3a3ad;
+    --accent: #d0400f;
+    --ok: #7ee09a;
+    --radius: 12px;
+    --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; overflow: hidden; }
+  body { display: flex; flex-direction: column; }
+
+  .icon-btn { width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; padding: 0; }
+  .icon-btn:hover { background: rgba(255,255,255,.09); color: var(--text); }
+  .icon-btn:disabled { opacity: .35; cursor: default; background: transparent; color: var(--muted); }
+  .icon-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .btn { height: 36px; border: 0; border-radius: 10px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 14px; }
+  .btn kbd { font-family: inherit; font-weight: 500; font-size: 11px; background: rgba(255,255,255,.15); padding: 1px 6px; border-radius: 5px; }
+  .btn.ghost { background: var(--card); color: var(--text); border: 1px solid var(--card-border); }
+  .btn.ghost:hover { background: rgba(255,255,255,.07); }
+  .btn.danger:hover { color: #ff6b6b; }
+
+  /* ---- строка-пилюля (всегда видна) ---- */
+  .bar { flex: 0 0 auto; height: 40px; display: flex; align-items: center; gap: 2px; padding: 0 6px; -webkit-app-region: drag; }
+  .bar button, .bar .count { -webkit-app-region: no-drag; }
+  .count { min-width: 26px; height: 24px; padding: 0 7px; margin-right: 2px; border-radius: 12px; background: rgba(255,255,255,.1); color: var(--text); font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; font-variant-numeric: tabular-nums; }
+  .count.has { background: var(--accent); color: #fff; }
+  .count.empty { color: var(--muted); font-weight: 500; }
+  .count.bump { animation: bump .45s ease; }
+  @keyframes bump { 30% { transform: scale(1.25); } }
+  .title { display: none; flex: 1; font-weight: 600; padding-left: 4px; -webkit-app-region: drag; }
+  .x-only { display: none !important; }
+  body.expanded .x-only { display: inline-flex !important; }
+  body.expanded .title { display: block; }
+  #copy.done { color: var(--ok); }
+  #copy .spin { display: none; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.25); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+  #copy.busy svg { display: none; }
+  #copy.busy .spin { display: block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .chev { transition: transform .2s; }
+  body.expanded .chev { transform: rotate(180deg); }
+
+  /* ---- раскрытая часть ---- */
+  .full { display: none; flex: 1 1 auto; flex-direction: column; min-height: 0; border-top: 1px solid var(--card-border); }
+  body.expanded .full { display: flex; }
+
+  main { flex: 1 1 auto; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+  main::-webkit-scrollbar { width: 8px; }
+  main::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 4px; }
+  .empty-list { margin: auto; text-align: center; color: var(--muted); line-height: 1.6; padding: 24px; }
+  .empty-list kbd { font-family: inherit; background: rgba(255,255,255,.1); color: var(--text); padding: 2px 8px; border-radius: 6px; }
+  .empty-list strong { display: block; color: var(--text); font-size: 15px; margin-bottom: 6px; }
+
+  .card { background: var(--card); border: 1px solid var(--card-border); border-radius: var(--radius); padding: 8px; display: grid; grid-template-columns: 36px 1fr; gap: 8px; }
+  .card .num { width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 13px; margin-top: 2px; }
+  .card .body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .card .thumb { display: block; width: 100%; max-height: 150px; object-fit: contain; object-position: left; border-radius: 6px; background: #000; cursor: pointer; }
+  .card .thumb:hover { outline: 2px solid var(--accent); }
+  .card .field { position: relative; }
+  .card .voice-btn { --vb-size: 24px; right: 5px; bottom: 5px; }
+  .card .voice-btn svg { width: 14px; height: 14px; }
+  .card textarea { display: block; width: 100%; resize: none; min-height: 34px; background: rgba(255,255,255,.04); border: 1px solid transparent; border-radius: 8px; color: var(--text); font: inherit; padding: 7px 36px 7px 9px; line-height: 1.35; outline: none; }
+  .card textarea:focus { border-color: rgba(255,90,40,.5); background: rgba(255,255,255,.06); }
+  .card textarea::placeholder { color: var(--muted); }
+  .card .actions { display: flex; gap: 2px; justify-content: flex-end; }
+  .card .actions .icon-btn { width: 26px; height: 26px; }
+
+  footer { flex: 0 0 auto; padding: 10px; border-top: 1px solid var(--card-border); display: flex; flex-direction: column; gap: 8px; }
+  .row { display: flex; gap: 8px; }
+  .row .btn { flex: 1; }
+  .opts { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 12px; }
+  .opts label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .opts .line { display: flex; justify-content: space-between; align-items: center; }
+  .opts a { color: var(--muted); cursor: pointer; text-decoration: underline dotted; }
+  #sttState.ok { color: var(--ok); }
+
+  #toast { position: fixed; left: 8px; right: 8px; bottom: 8px; background: #2b2b31; border: 1px solid var(--card-border); border-radius: 10px; padding: 10px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.5); font-size: 12px; line-height: 1.4; transform: translateY(130%); transition: transform .25s; z-index: 5; }
+  #toast.show { transform: none; }
+  #toast.ok { border-color: rgba(52,199,89,.5); }
+  #toast.err { border-color: rgba(255,59,48,.6); }
+  body:not(.expanded) #toast { display: none; }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <span class="count empty" id="count" title="Раскрыть список">0</span>
+    <span class="title">Снимки</span>
+    <button class="icon-btn x-only" id="new" title="Новый снимок (Ctrl+Shift+S)">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+    <button class="icon-btn" id="copy" title="Скопировать всё для чата" disabled>
+      <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>
+      <span class="spin"></span>
+    </button>
+    <button class="icon-btn" id="toggle" title="Раскрыть список">
+      <svg class="chev" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg>
+    </button>
+    <button class="icon-btn x-only" id="hide" title="Скрыть панель (Ctrl+Shift+D)">
+      <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+
+  <div class="full">
+    <main id="list"></main>
+    <footer>
+      <div class="row">
+        <button class="btn ghost" id="newBig">+ Новый снимок <kbd>Ctrl+Shift+S</kbd></button>
+        <button class="btn ghost danger" id="clear" title="Удалить все снимки" style="flex:0 0 auto">Очистить</button>
+      </div>
+      <div class="opts">
+        <label><input type="checkbox" id="optCaption"> подпись под картинкой</label>
+        <label><input type="checkbox" id="optTwoStep"> текст вторым Ctrl+V автоматически</label>
+        <div class="line">
+          <label><input type="checkbox" id="autoClear"> очищать после копирования</label>
+          <a id="copyText" title="Скопировать только текст комментариев">только текст</a>
+        </div>
+        <div class="line">
+          <label><input type="checkbox" id="pin" checked> поверх других окон</label>
+          <span id="sttState" title="Локальное распознавание речи GigaAM v3, работает без интернета"></span>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <div id="toast"></div>
+
+  <link rel="stylesheet" href="../shared/voice.css">
+  <script src="../shared/draw.js"></script>
+  <script src="../shared/voice.js"></script>
+  <script src="panel.js"></script>
+</body>
+</html>
