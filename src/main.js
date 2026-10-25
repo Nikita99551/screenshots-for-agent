@@ -18,7 +18,9 @@ const STT_PYTHON = app.isPackaged ? path.join(RES_DIR, 'python', 'python.exe') :
 const STT_SCRIPT = path.join(STT_DIR, 'stt_server.py');
 
 // Одна папка данных и для разработки, и для установленной программы (иначе имя папки взялось бы из productName).
-app.setPath('userData', path.join(app.getPath('appData'), 'screenshots-for-agent'));
+app.setPath('userData', process.env.SFA_USERDATA || path.join(app.getPath('appData'), 'screenshots-for-agent'));
+// Самопроверка (npm run selftest): невидимо делает снимок, сохраняет и копирует, пишет время шагов в app.log.
+const SELFTEST = process.env.SFA_SELFTEST === '1';
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -49,6 +51,7 @@ let helper = null;
 let helperReady = false;
 let shotSeq = 0;
 const shotWaiters = new Map();
+const clipWaiters = new Map();
 let pendingText = null;
 let pendingTimer = null;
 
@@ -130,6 +133,8 @@ function startHelper() {
     helper = null; helperReady = false;
     for (const [, w] of shotWaiters) w.reject(new Error('helper exited'));
     shotWaiters.clear();
+    for (const [, w] of clipWaiters) w({ ok: false, error: 'helper exited' });
+    clipWaiters.clear();
     if (!quitting) setTimeout(startHelper, 2000);
   });
 }
@@ -145,6 +150,14 @@ function onHelperLine(line) {
     shotWaiters.delete(id);
     if (status === 'ok') w.resolve({ width: Number(rest[0]), height: Number(rest[1]), ms: Number(rest[2]) });
     else w.reject(new Error(rest.join(' ')));
+    return;
+  }
+  if (line.startsWith('CLIP ')) {
+    const [, id, status, ...rest] = line.split(' ');
+    const w = clipWaiters.get(id);
+    if (!w) return;
+    clipWaiters.delete(id);
+    w(status === 'ok' ? { ok: true, ms: Number(rest[0]) } : { ok: false, error: rest.join(' ') });
     return;
   }
   if (line) log(`helper: ${line}`);
@@ -219,7 +232,8 @@ function createPanel() {
     icon: makeIcon(64),
     backgroundColor: '#17171a',
     show: false,
-    webPreferences: { preload, contextIsolation: true, nodeIntegration: false },
+    // без фонового торможения: иначе кодирование PNG в свёрнутой/скрытой панели ждёт до 5 с
+    webPreferences: { preload, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false },
   });
   // Панель не попадает в снимки: её не нужно прятать перед захватом.
   panelWin.setContentProtection(true);
@@ -294,6 +308,7 @@ function closeCapture() {
 function revealCapture() {
   clearTimeout(captureShowTimer);
   if (!captureWin || captureWin.isDestroyed() || !captureOpen) return;
+  if (SELFTEST) return; // в самопроверке окно остаётся прозрачным и не забирает фокус
   captureWin.setOpacity(1);
   captureWin.focus();
   captureWin.webContents.focus();
@@ -327,7 +342,7 @@ async function startCapture(editItem) {
   // Показываем прозрачным, рисуем, потом проявляем: без мелькания старого кадра.
   captureWin.setOpacity(0);
   captureWin.setBounds(display.bounds);
-  captureWin.show();
+  if (SELFTEST) captureWin.showInactive(); else captureWin.show();
   captureWin.webContents.send('capture:init', payload);
   captureShowTimer = setTimeout(revealCapture, 1200); // страховка, если окно не ответило
 }
@@ -337,7 +352,24 @@ function notify(body) {
 }
 
 // ---------- буфер обмена: файлы + текст через PowerShell ----------
-function copyToClipboard(filePaths, text) {
+// Через постоянный помощник: ~20 мс. Запасной путь — отдельный PowerShell (1–3 с на запуск).
+async function copyToClipboard(filePaths, text) {
+  if (helperReady) {
+    const manifest = path.join(exportDir, 'clip.txt');
+    await fs.promises.writeFile(manifest, [String(filePaths.length), ...filePaths, text || ''].join('\n'), 'utf8');
+    const id = String(++shotSeq);
+    const res = await new Promise((resolve) => {
+      const timer = setTimeout(() => { clipWaiters.delete(id); resolve({ ok: false, error: 'timeout' }); }, 5000);
+      clipWaiters.set(id, (r) => { clearTimeout(timer); resolve(r); });
+      if (!helperSend(`clip ${id} ${manifest}`)) { clipWaiters.delete(id); clearTimeout(timer); resolve({ ok: false, error: 'helper' }); }
+    });
+    if (res.ok) return res;
+    log(`clip via helper failed: ${res.error}, fallback`);
+  }
+  return copyToClipboardSlow(filePaths, text);
+}
+
+function copyToClipboardSlow(filePaths, text) {
   return new Promise((resolve) => {
     const manifest = path.join(exportDir, 'clip.json');
     fs.writeFileSync(manifest, JSON.stringify({ files: filePaths, text }), 'utf8');
@@ -465,6 +497,7 @@ async function transcribe(pcm) {
 // ---------- IPC ----------
 ipcMain.handle('queue:get', () => queue.map(publicItem));
 ipcMain.handle('shot:data', (_e, id) => readShotDataUrl(id));
+ipcMain.handle('shot:bytes', (_e, id) => fs.promises.readFile(shotPath(id)));
 
 ipcMain.on('capture:new', () => startCapture());
 ipcMain.on('capture:cancel', () => closeCapture());
@@ -473,8 +506,12 @@ ipcMain.on('capture:ready', () => {
   log(`capture shown in ${now() - captureT0}ms`);
 });
 
-ipcMain.handle('capture:save', (_e, data) => {
-  // data: { id?, image? (dataURL нового снимка), width, height, annotations, comment }
+// Окно прячется сразу по Enter, а PNG кодируется и сохраняется уже в фоне.
+ipcMain.on('capture:hide', () => closeCapture());
+
+ipcMain.handle('capture:save', async (_e, data) => {
+  // data: { id?, png? (ArrayBuffer нового снимка), width, height, annotations, comment }
+  const t0 = now();
   let item = data.id ? queue.find((q) => q.id === data.id) : null;
   if (item) {
     item.annotations = data.annotations || [];
@@ -482,8 +519,7 @@ ipcMain.handle('capture:save', (_e, data) => {
     item.updatedAt = Date.now();
   } else {
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    const base64 = String(data.image).replace(/^data:image\/png;base64,/, '');
-    fs.writeFileSync(shotPath(id), Buffer.from(base64, 'base64'));
+    await fs.promises.writeFile(shotPath(id), Buffer.from(data.png));
     item = {
       id,
       width: data.width,
@@ -496,10 +532,12 @@ ipcMain.handle('capture:save', (_e, data) => {
     queue.push(item);
   }
   saveQueue();
-  closeCapture();
   broadcastQueue();
+  log(`save ${data.png ? Math.round(data.png.byteLength / 1024) + 'KB' : 'edit'} main=${now() - t0}ms`);
   return item.id;
 });
+
+ipcMain.on('app:log', (_e, msg) => log(`ui: ${String(msg).slice(0, 300)}`));
 
 ipcMain.handle('queue:update', (_e, { id, comment }) => {
   const item = queue.find((q) => q.id === id);
@@ -542,17 +580,17 @@ ipcMain.on('queue:edit', (_e, id) => {
 });
 
 // files: [{ name, dataUrl }], text: строка с комментариями
+// files: [{ name, data: ArrayBuffer PNG }]
 ipcMain.handle('queue:copy', async (_e, { files, text, twoStep }) => {
-  fs.rmSync(exportDir, { recursive: true, force: true });
-  fs.mkdirSync(exportDir, { recursive: true });
-  const paths = [];
-  for (const f of files) {
-    const p = path.join(exportDir, f.name);
-    fs.writeFileSync(p, Buffer.from(String(f.dataUrl).replace(/^data:image\/png;base64,/, ''), 'base64'));
-    paths.push(p);
-  }
+  const t0 = now();
+  await fs.promises.rm(exportDir, { recursive: true, force: true });
+  await fs.promises.mkdir(exportDir, { recursive: true });
+  const paths = files.map((f) => path.join(exportDir, f.name));
+  await Promise.all(files.map((f, i) => fs.promises.writeFile(paths[i], Buffer.from(f.data))));
+  const tWrite = now() - t0;
   const res = await copyToClipboard(paths, text);
-  if (res.ok && twoStep && text) armSecondPaste(text); else disarmSecondPaste();
+  if (res.ok && twoStep && text && !SELFTEST) armSecondPaste(text); else disarmSecondPaste();
+  log(`copy ${files.length} files: write=${tWrite}ms clipboard=${now() - t0 - tWrite}ms ok=${res.ok}`);
   return { ...res, count: paths.length, folder: exportDir };
 });
 
@@ -620,7 +658,7 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === 'media');
 
   startHelper();
-  startStt();
+  if (!SELFTEST) startStt();
   createPanel();
   createCaptureWin();
   buildTray();
@@ -631,5 +669,59 @@ app.whenReady().then(() => {
   if (!ok1) notify('Не удалось занять Ctrl+Shift+S: клавиша занята другой программой');
   if (!ok2) notify('Не удалось занять Ctrl+Shift+D');
 
+  if (SELFTEST) { selfTest(); return; }
   showPanel(false);
 });
+
+// ---------- самопроверка ----------
+async function selfTest() {
+  const wait = async (cond, ms) => { const t = now(); while (!cond() && now() - t < ms) await new Promise((r) => setTimeout(r, 10)); return cond(); };
+  const result = {};
+  try {
+    await wait(() => helperReady, 20000);
+    await wait(() => panelWin && !panelWin.webContents.isLoading() && captureWin && !captureWin.webContents.isLoading(), 20000);
+    result.captureReady = []; result.hiddenAfterEnter = []; result.savedAfterEnter = [];
+    let t;
+    for (let i = 0; i < 3; i++) {
+      const before = queue.length;
+      // 1. снимок экрана → окно выделения готово
+      t = now();
+      const ready = new Promise((r) => ipcMain.once('capture:ready', r));
+      startCapture();
+      await ready;
+      result.captureReady.push(now() - t);
+      // 2. выделить область, написать комментарий, Enter
+      await captureWin.webContents.executeJavaScript(`cropAndEdit({ x: 40, y: 40, w: innerWidth - 80 - ${i * 300}, h: innerHeight - 120 - ${i * 150} }); document.querySelector('#comment').value = 'самопроверка ${i + 1}: комментарий средней длины для проверки скорости сохранения'; true`);
+      t = now();
+      captureWin.webContents.executeJavaScript('done(); true');
+      await wait(() => !captureWin.isVisible(), 10000);
+      result.hiddenAfterEnter.push(now() - t);
+      await wait(() => queue.length > before, 15000);
+      result.savedAfterEnter.push(now() - t);
+    }
+    // разбор по шагам сборки одного снимка в панели
+    result.composeSteps = await panelWin.webContents.executeJavaScript(`(async () => {
+      const r = {}; let t = performance.now();
+      const it = items[0];
+      const bytes = await api.invoke('shot:bytes', it.id); r.ipc = Math.round(performance.now() - t); t = performance.now();
+      const img = await createImageBitmap(new Blob([bytes], { type: 'image/png' })); r.decode = Math.round(performance.now() - t); t = performance.now();
+      const c = ShotDraw.compose(img, it.annotations, 1, it.comment); r.draw = Math.round(performance.now() - t); t = performance.now();
+      const b = await ShotDraw.encodePng(c); r.encode = Math.round(performance.now() - t); r.kb = Math.round(b.byteLength / 1024);
+      r.visibility = document.visibilityState;
+      return r;
+    })()`);
+    // 3. скопировать всё
+    t = now();
+    await panelWin.webContents.executeJavaScript('copyAll().then(() => true)');
+    result.copyAll = now() - t;
+    result.clipboardFormats = clipboard.availableFormats().join(',');
+    result.clipboardText = clipboard.readText().slice(0, 60);
+  } catch (e) {
+    result.error = e.stack || String(e);
+  }
+  log(`SELFTEST ${JSON.stringify(result)}`);
+  console.log(`SELFTEST ${JSON.stringify(result)}`);
+  quitting = true;
+  app.quit();
+}
+

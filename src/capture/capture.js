@@ -36,7 +36,7 @@ function rawToCanvas(raw, w, h) {
   }
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
-  c.getContext('2d').putImageData(img, 0, 0);
+  c.getContext('2d', { willReadFrequently: true }).putImageData(img, 0, 0);
   return c;
 }
 
@@ -110,10 +110,9 @@ function cropAndEdit(r) {
   const k = state.screen.width / window.innerWidth;
   const sx = Math.round(r.x * k); const sy = Math.round(r.y * k);
   const sw = Math.max(1, Math.round(r.w * k)); const sh = Math.max(1, Math.round(r.h * k));
-  const c = document.createElement('canvas');
-  c.width = sw; c.height = sh;
-  c.getContext('2d').drawImage(state.screen, sx, sy, sw, sh, 0, 0, sw, sh);
-  state.img = c; // PNG кодируется только при сохранении
+  const c = ShotDraw.makeCanvas(sw, sh);
+  c.getContext('2d', { willReadFrequently: true }).drawImage(state.screen, sx, sy, sw, sh, 0, 0, sw, sh);
+  state.img = c; // PNG кодируется только при сохранении, в фоновом потоке
   enterEdit();
 }
 
@@ -264,15 +263,23 @@ async function done() {
   state.saving = true;
   $('#done').disabled = true;
   if (Voice.isActive()) await Voice.stop(); // дождаться распознанного текста
+  const t0 = performance.now();
   const payload = {
     id: state.editId,
-    image: state.editId ? undefined : state.img.toDataURL('image/png'),
     width: ed.canvas.width,
     height: ed.canvas.height,
     annotations: state.annotations,
     comment: comment.value.trim(),
   };
+  const crop = state.editId ? null : state.img;
+  // Окно прячем сразу; PNG кодируется асинхронно (toBlob не блокирует окно), сохранение идёт в фоне.
+  api.send('capture:hide');
+  if (crop) {
+    payload.png = await ShotDraw.encodePng(crop);
+  }
+  const tEnc = performance.now() - t0;
   await api.invoke('capture:save', payload);
+  api.send('app:log', `save ${payload.width}x${payload.height} encode=${Math.round(tEnc)}ms total=${Math.round(performance.now() - t0)}ms`);
 }
 $('#done').addEventListener('click', done);
 

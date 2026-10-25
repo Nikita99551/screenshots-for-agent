@@ -142,15 +142,18 @@ async function copyAll() {
   btn.classList.remove('done');
   btn.classList.add('busy'); btn.disabled = true;
   try {
-    const files = [];
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i];
-      const img = await ShotDraw.loadImage(await api.invoke('shot:data', it.id));
+    const t0 = performance.now();
+    // Все снимки собираются параллельно; toBlob кодирует PNG вне основного потока, панель не замирает.
+    const files = await Promise.all(items.map(async (it, i) => {
+      const bytes = await api.invoke('shot:bytes', it.id);
+      const img = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
       const canvas = ShotDraw.compose(img, it.annotations, i + 1, settings.caption ? it.comment : '');
-      files.push({ name: `скриншот-${String(i + 1).padStart(2, '0')}.png`, dataUrl: canvas.toDataURL('image/png') });
-    }
+      return { name: `скриншот-${String(i + 1).padStart(2, '0')}.png`, data: await ShotDraw.encodePng(canvas) };
+    }));
+    const tCompose = performance.now() - t0;
     const text = buildText();
     const res = await api.invoke('queue:copy', { files, text, twoStep: settings.twoStep });
+    api.send('app:log', `copy ${files.length}: compose=${Math.round(tCompose)}ms total=${Math.round(performance.now() - t0)}ms`);
     if (res.ok) {
       const n = res.count;
       btn.classList.add('done');

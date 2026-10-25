@@ -1,6 +1,6 @@
 {
   "name": "screenshots-for-agent",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Серия скриншотов с разметкой и комментариями для вставки в чат с ИИ-агентом",
   "author": "Nikita99551",
   "license": "MIT",

@@ -1,5 +1,6 @@
 // Общая отрисовка разметки. Используется редактором и панелью (при сборке файлов для буфера).
 // Координаты аннотаций — в пикселях исходного изображения.
+const SCRIPT_URL = document.currentScript ? document.currentScript.src : location.href;
 (function (global) {
   function baseWidth(w, h) {
     return Math.max(3, Math.round(Math.hypot(w, h) / 350));
@@ -135,8 +136,8 @@
     const font = Math.max(15, Math.round(Math.hypot(w, h) / 60));
     const pad = Math.round(font * 0.9);
     const lineH = Math.round(font * 1.35);
-    const c = document.createElement('canvas');
-    const probe = c.getContext('2d');
+    const c = makeCanvas(1, 1);
+    const probe = c.getContext('2d', { willReadFrequently: true }); // процессорный холст, быстрее читается при кодировании
     probe.font = `${font}px "Segoe UI", Arial, sans-serif`;
     const prefix = badgeNumber != null ? `${badgeNumber}. ` : '';
     const text = caption && String(caption).trim() ? prefix + String(caption).trim() : '';
@@ -171,5 +172,50 @@
     });
   }
 
-  global.ShotDraw = { baseWidth, drawAnnotations, drawBadge, compose, loadImage };
+  // Холст для снимков: внеэкранный, процессорный.
+  function makeCanvas(w, h) {
+    if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(Math.max(1, w), Math.max(1, h));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, w); c.height = Math.max(1, h);
+    return c;
+  }
+
+  // PNG кодируется в отдельном потоке (png-worker.js): в самом окне движок откладывает кодирование
+  // «до свободной минуты», и первое кодирование большой картинки ждало до 3–5 секунд.
+  let worker = null;
+  let seq = 0;
+  const waiters = new Map();
+  function getWorker() {
+    if (worker) return worker;
+    worker = new Worker(new URL('png-worker.js', SCRIPT_URL));
+    worker.onmessage = (e) => {
+      const w = waiters.get(e.data.id);
+      if (!w) return;
+      waiters.delete(e.data.id);
+      if (e.data.error) w.reject(new Error(e.data.error)); else w.resolve(e.data.buf);
+    };
+    worker.onerror = (e) => { for (const [, w] of waiters) w.reject(new Error(e.message || 'png worker')); waiters.clear(); worker = null; };
+    return worker;
+  }
+
+  // Холст → ArrayBuffer с PNG. Запасной путь — кодирование в самом окне.
+  async function encodePng(canvas) {
+    try {
+      const bitmap = await createImageBitmap(canvas);
+      const id = ++seq;
+      return await new Promise((resolve, reject) => {
+        waiters.set(id, { resolve, reject });
+        getWorker().postMessage({ id, bitmap }, [bitmap]);
+      });
+    } catch (e) {
+      const blob = canvas.convertToBlob ? await canvas.convertToBlob({ type: 'image/png' })
+        : await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      return blob.arrayBuffer();
+    }
+  }
+
+  // Прогрев: запускаем поток заранее, пока пользователь ничего не ждёт.
+  setTimeout(() => { encodePng(makeCanvas(64, 64)).catch(() => {}); }, 300);
+
+  global.ShotDraw = { baseWidth, drawAnnotations, drawBadge, compose, loadImage, makeCanvas, encodePng };
 })(window);
