@@ -12,22 +12,25 @@
     --muted: #a3a3ad;
     --accent: #d0400f;
     --ok: #7ee09a;
+    --err: #ff8a80;
     --radius: 12px;
     --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; overflow: hidden; }
   body { display: flex; flex-direction: column; }
+  [hidden] { display: none !important; }
 
   .icon-btn { width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; padding: 0; }
   .icon-btn:hover { background: rgba(255,255,255,.09); color: var(--text); }
   .icon-btn:disabled { opacity: .35; cursor: default; background: transparent; color: var(--muted); }
   .icon-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-  .btn { height: 36px; border: 0; border-radius: 10px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 14px; }
+  .btn { height: 34px; border: 0; border-radius: 10px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 14px; }
   .btn kbd { font-family: inherit; font-weight: 500; font-size: 11px; background: rgba(255,255,255,.15); padding: 1px 6px; border-radius: 5px; }
   .btn.ghost { background: var(--card); color: var(--text); border: 1px solid var(--card-border); }
   .btn.ghost:hover { background: rgba(255,255,255,.07); }
-  .btn.danger:hover { color: #ff6b6b; }
+  .btn.small { height: 28px; padding: 0 10px; font-size: 12px; }
+  .btn.danger:hover { color: var(--err); }
 
   /* ---- строка-пилюля (всегда видна) ---- */
   .bar { flex: 0 0 auto; height: 40px; display: flex; align-items: center; gap: 2px; padding: 0 6px; -webkit-app-region: drag; }
@@ -52,10 +55,14 @@
   /* ---- раскрытая часть ---- */
   .full { display: none; flex: 1 1 auto; flex-direction: column; min-height: 0; border-top: 1px solid var(--card-border); }
   body.expanded .full { display: flex; }
-
-  main { flex: 1 1 auto; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
-  main::-webkit-scrollbar { width: 8px; }
-  main::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 4px; }
+  .tabs { flex: 0 0 auto; display: flex; gap: 4px; padding: 8px 10px 0; }
+  .tab { flex: 1; height: 30px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font: inherit; font-weight: 600; cursor: pointer; }
+  .tab:hover { background: rgba(255,255,255,.05); color: var(--text); }
+  .tab.active { background: rgba(255,255,255,.09); color: var(--text); }
+  .view { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+  .scroll { flex: 1 1 auto; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .scroll::-webkit-scrollbar { width: 8px; }
+  .scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 4px; }
   .empty-list { margin: auto; text-align: center; color: var(--muted); line-height: 1.6; padding: 24px; }
   .empty-list kbd { font-family: inherit; background: rgba(255,255,255,.1); color: var(--text); padding: 2px 8px; border-radius: 6px; }
   .empty-list strong { display: block; color: var(--text); font-size: 15px; margin-bottom: 6px; }
@@ -71,16 +78,40 @@
   .card textarea { display: block; width: 100%; resize: none; min-height: 34px; background: rgba(255,255,255,.04); border: 1px solid transparent; border-radius: 8px; color: var(--text); font: inherit; padding: 7px 36px 7px 9px; line-height: 1.35; outline: none; }
   .card textarea:focus { border-color: rgba(255,90,40,.5); background: rgba(255,255,255,.06); }
   .card textarea::placeholder { color: var(--muted); }
+  .notes { display: flex; flex-direction: column; gap: 3px; margin: 0; padding: 0; list-style: none; }
+  .notes li { display: flex; gap: 6px; line-height: 1.35; color: #d9d9e0; cursor: pointer; }
+  .notes li:hover { color: #fff; }
+  .notes b { flex: 0 0 auto; color: #ffb49c; font-variant-numeric: tabular-nums; }
   .card .actions { display: flex; gap: 2px; justify-content: flex-end; }
   .card .actions .icon-btn { width: 26px; height: 26px; }
 
-  footer { flex: 0 0 auto; padding: 10px; border-top: 1px solid var(--card-border); display: flex; flex-direction: column; gap: 8px; }
-  .row { display: flex; gap: 8px; }
-  .row .btn { flex: 1; }
-  .opts { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 12px; }
-  .opts label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
-  .opts .line { display: flex; justify-content: space-between; align-items: center; }
-  .opts a { color: var(--muted); cursor: pointer; text-decoration: underline dotted; }
+  .hist { background: var(--card); border: 1px solid var(--card-border); border-radius: var(--radius); padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .hist .meta { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; }
+  .hist .meta b { color: var(--text); font-weight: 600; }
+  .hist .text { color: #d9d9e0; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; }
+  .hist .thumbs { display: flex; gap: 6px; }
+  .hist .thumbs img { width: 70px; height: 44px; object-fit: cover; object-position: left top; border-radius: 5px; background: #000; }
+  .hist .row { display: flex; gap: 6px; justify-content: flex-end; }
+
+  footer { flex: 0 0 auto; padding: 10px; border-top: 1px solid var(--card-border); display: flex; gap: 8px; }
+  footer .btn { flex: 1; }
+
+  .set { display: flex; flex-direction: column; gap: 6px; padding-bottom: 12px; border-bottom: 1px solid var(--card-border); }
+  .set:last-child { border-bottom: 0; }
+  .set h3 { margin: 0 0 2px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .set label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .hk { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .hk button { min-width: 140px; height: 30px; border-radius: 8px; border: 1px solid var(--card-border); background: rgba(255,255,255,.05); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; padding: 0 10px; }
+  .hk button:hover { border-color: rgba(255,90,40,.5); }
+  .hk button.rec { border-color: var(--accent); color: #ffb49c; }
+  .hk .bad { color: var(--err); }
+  .hint { color: var(--muted); font-size: 12px; line-height: 1.4; }
+  .hint.err { color: var(--err); }
+  .hint.ok { color: var(--ok); }
+  .links { display: flex; gap: 12px; }
+  .links a, .opts-link { color: var(--muted); cursor: pointer; text-decoration: underline dotted; font-size: 12px; }
+  #dict { width: 100%; min-height: 150px; resize: vertical; background: rgba(255,255,255,.04); border: 1px solid var(--card-border); border-radius: 8px; color: var(--text); font: 12px/1.45 Consolas, "Cascadia Mono", monospace; padding: 8px; outline: none; }
+  #dict:focus { border-color: rgba(255,90,40,.5); }
   #sttState.ok { color: var(--ok); }
 
   #toast { position: fixed; left: 8px; right: 8px; bottom: 8px; background: #2b2b31; border: 1px solid var(--card-border); border-radius: 10px; padding: 10px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.5); font-size: 12px; line-height: 1.4; transform: translateY(130%); transition: transform .25s; z-index: 5; }
@@ -94,7 +125,7 @@
   <div class="bar">
     <span class="count empty" id="count" title="Раскрыть список">0</span>
     <span class="title">Снимки</span>
-    <button class="icon-btn x-only" id="new" title="Новый снимок (Ctrl+Shift+S)">
+    <button class="icon-btn x-only" id="new" title="Новый снимок">
       <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
     </button>
     <button class="icon-btn" id="copy" title="Скопировать всё для чата" disabled>
@@ -104,37 +135,64 @@
     <button class="icon-btn" id="toggle" title="Раскрыть список">
       <svg class="chev" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg>
     </button>
-    <button class="icon-btn x-only" id="hide" title="Скрыть панель (Ctrl+Shift+D)">
+    <button class="icon-btn x-only" id="hide" title="Скрыть панель">
       <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
     </button>
   </div>
 
   <div class="full">
-    <main id="list"></main>
-    <footer>
-      <div class="row">
-        <button class="btn ghost" id="newBig">+ Новый снимок <kbd>Ctrl+Shift+S</kbd></button>
+    <div class="tabs">
+      <button class="tab active" data-view="shots">Снимки</button>
+      <button class="tab" data-view="history">История</button>
+      <button class="tab" data-view="settings">Настройки</button>
+    </div>
+
+    <section class="view" id="view-shots">
+      <main class="scroll" id="list"></main>
+      <footer>
+        <button class="btn ghost" id="newBig">+ Новый снимок <kbd id="captureKeyHint">Ctrl+Shift+S</kbd></button>
         <button class="btn ghost danger" id="clear" title="Удалить все снимки" style="flex:0 0 auto">Очистить</button>
-      </div>
-      <div class="opts">
-        <label><input type="checkbox" id="optCaption"> подпись под картинкой</label>
-        <label><input type="checkbox" id="optTwoStep"> текст вторым Ctrl+V автоматически</label>
-        <div class="line">
-          <label><input type="checkbox" id="autoClear"> очищать после копирования</label>
-          <a id="copyText" title="Скопировать только текст комментариев">только текст</a>
+      </footer>
+    </section>
+
+    <section class="view" id="view-history" hidden>
+      <div class="scroll" id="historyList"></div>
+    </section>
+
+    <section class="view" id="view-settings" hidden>
+      <div class="scroll">
+        <div class="set">
+          <h3>Копирование</h3>
+          <label><input type="checkbox" id="optCaption"> подпись и заметки под картинкой</label>
+          <label><input type="checkbox" id="optTwoStep"> текст вторым Ctrl+V автоматически</label>
+          <label><input type="checkbox" id="autoClear"> очищать очередь после копирования</label>
+          <label><input type="checkbox" id="pin" checked> панель поверх других окон</label>
+          <div class="links"><a id="copyText" title="Скопировать только текст комментариев">скопировать только текст</a></div>
         </div>
-        <div class="line">
-          <label><input type="checkbox" id="pin" checked> поверх других окон</label>
-          <span id="sttState" title="Локальное распознавание речи GigaAM v3, работает без интернета"></span>
+        <div class="set">
+          <h3>Горячие клавиши</h3>
+          <div class="hk"><span>Новый снимок</span><button data-hk="capture"></button></div>
+          <div class="hk"><span>Показать / скрыть панель</span><button data-hk="panel"></button></div>
+          <div class="hk"><span>Голос в редакторе</span><button data-hk="voice"></button></div>
+          <div class="hint" id="hkHint">Нажми на кнопку и затем нужное сочетание. Esc — отмена.</div>
+          <div class="links"><a id="hkReset">вернуть стандартные</a></div>
+        </div>
+        <div class="set">
+          <h3>Словарь для голоса</h3>
+          <div class="hint">После распознавания слова заменяются по строкам «что = на что». Звёздочка — любое окончание: «фигм* = Figma» превратит «в фигме» в «в Figma».</div>
+          <textarea id="dict" spellcheck="false"></textarea>
+          <div class="hk"><span class="hint" id="dictHint"></span><span class="links"><a id="dictDefault">по умолчанию</a> <button class="btn ghost small" id="dictSave">Сохранить</button></span></div>
+          <div class="hint">Распознавание речи: <span id="sttState" title="GigaAM v3, работает без интернета"></span></div>
         </div>
       </div>
-    </footer>
+    </section>
   </div>
 
   <div id="toast"></div>
 
   <link rel="stylesheet" href="../shared/voice.css">
   <script src="../shared/draw.js"></script>
+  <script src="../shared/keys.js"></script>
   <script src="../shared/voice.js"></script>
   <script src="panel.js"></script>
 </body>

@@ -1,6 +1,6 @@
 # Постоянный помощник приложения (запускается один раз при старте, живёт, пока жив Electron).
 # Команды в stdin, по одной в строке:
-#   shot <id> <x> <y> <w> <h> <path>  — снимок области экрана (физические пиксели) в сырой BGRA-файл
+#   shot <id> <x> <y> <w> <h> <flush> <path> — снимок области (физ. пиксели) в сырой BGRA; flush — сколько кадров DwmFlush ждать
 #   clip <id> <manifest>              — положить в буфер файлы + текст (манифест: N, N путей, дальше текст)
 #   arm / disarm                      — включить / выключить перехват Ctrl+V (строка CTRLV)
 #   paste                             — нажать Ctrl+V
@@ -41,6 +41,7 @@ public class Helper {
   [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr o);
   [DllImport("gdi32.dll")] static extern bool BitBlt(IntPtr d, int x, int y, int w, int h, IntPtr s, int sx, int sy, uint rop);
   [DllImport("gdi32.dll")] static extern IntPtr CreateDIBSection(IntPtr dc, ref BITMAPINFOHEADER bmi, uint usage, out IntPtr bits, IntPtr sec, uint off);
+  [DllImport("dwmapi.dll")] static extern int DwmFlush();
   [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
   [DllImport("kernel32.dll")] static extern bool SetProcessInformation(IntPtr h, int cls, ref PPTS info, int size);
 
@@ -93,16 +94,20 @@ public class Helper {
       DataObject data = new DataObject();
       if (files.Count > 0) data.SetFileDropList(files);
       if (text.Length > 0) data.SetText(text, TextDataFormat.UnicodeText);
-      Clipboard.SetDataObject(data, true, 10, 100);
+      Clipboard.SetDataObject(data, true, 20, 100); // буфер может быть занят другой программой: ждём до 2 с
       Say("CLIP " + id + " ok " + sw.ElapsedMilliseconds);
+    } catch (ExternalException e) {
+      Say("CLIP " + id + " busy " + Clean(e));
     } catch (Exception e) {
       Say("CLIP " + id + " err " + Clean(e));
     }
   }
 
   // Снимок области экрана: BitBlt в DIB сверху вниз, 32 бита BGRA, запись в файл.
-  static void Shot(string id, int x, int y, int w, int h, string path) {
+  static void Shot(string id, int x, int y, int w, int h, int flush, string path) {
     Stopwatch sw = Stopwatch.StartNew();
+    // flush > 0: дождаться, пока Windows выведет кадры (например, после скрытия панели), вместо фиксированной паузы
+    for (int i = 0; i < flush; i++) { try { DwmFlush(); } catch { } }
     IntPtr screen = GetDC(IntPtr.Zero);
     IntPtr mem = CreateCompatibleDC(screen);
     BITMAPINFOHEADER bi = new BITMAPINFOHEADER();
@@ -152,10 +157,10 @@ public class Helper {
     Thread t = new Thread(delegate() {
       string line;
       while ((line = Console.In.ReadLine()) != null) {
-        string[] p = line.Trim().Split(new char[] { ' ' }, 7);
+        string[] p = line.Trim().Split(new char[] { ' ' }, 8);
         if (p.Length == 0) continue;
         try {
-          if (p[0] == "shot" && p.Length == 7) Shot(p[1], int.Parse(p[2]), int.Parse(p[3]), int.Parse(p[4]), int.Parse(p[5]), p[6]);
+          if (p[0] == "shot" && p.Length == 8) Shot(p[1], int.Parse(p[2]), int.Parse(p[3]), int.Parse(p[4]), int.Parse(p[5]), int.Parse(p[6]), p[7]);
           else if (p[0] == "clip") { string[] q = line.Trim().Split(new char[] { ' ' }, 3); string cid = q[1]; string cpath = q[2]; OnUi(delegate { Clip(cid, cpath); }); }
           else if (p[0] == "arm") OnUi(Arm);
           else if (p[0] == "disarm") OnUi(Disarm);

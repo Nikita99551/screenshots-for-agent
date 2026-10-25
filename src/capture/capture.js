@@ -1,20 +1,25 @@
 // Окно захвата (создаётся один раз и переиспользуется):
-// выделение области на замороженном экране → редактор разметки с комментарием и голосовым вводом.
+// выделение области на замороженном экране → редактор разметки с комментарием, заметками к меткам и голосом.
 const $ = (s) => document.querySelector(s);
 
 const COLORS = ['#FF3B30', '#FF9500', '#FFD60A', '#34C759', '#0A84FF', '#BF5AF2', '#FFFFFF', '#111111'];
+const TOOL_KEYS = { a: 'arrow', ф: 'arrow', r: 'rect', к: 'rect', m: 'num', ь: 'num', n: 'num', т: 'num', p: 'pen', з: 'pen', b: 'blur', и: 'blur' };
 
 const state = {
   mode: 'idle',
   screen: null,        // canvas со всем экраном (физические пиксели)
   scaleFactor: 1,
   editId: null,        // id существующего снимка при редактировании
+  index: null,         // номер снимка в серии (для подписей меток «N.k»)
   img: null,           // canvas или Image вырезанной области
   annotations: [],
   tool: 'arrow',
   color: COLORS[0],
   drawing: null,       // текущая фигура в процессе рисования
+  hits: [],            // прямоугольники плашек меток (для клика)
+  noteFor: null,       // аннотация, заметка которой сейчас редактируется
   saving: false,
+  voiceKey: 'Control+Space',
 };
 
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -121,7 +126,11 @@ const ed = { canvas: $('#editCanvas'), ctx: null, scale: 1 };
 ed.ctx = ed.canvas.getContext('2d');
 const comment = $('#comment');
 const mic = $('#mic');
+const noteBox = $('#noteBox');
+const noteInput = $('#noteInput');
+const noteMic = $('#noteMic');
 Voice.decorate(mic);
+Voice.decorate(noteMic);
 
 function imgSize(im) { return [im.naturalWidth || im.width, im.naturalHeight || im.height]; }
 
@@ -147,14 +156,15 @@ function fitCanvas() {
   ed.canvas.style.width = `${Math.round(w * ed.scale)}px`;
   ed.canvas.style.height = `${Math.round(h * ed.scale)}px`;
 }
-window.addEventListener('resize', () => { if (state.mode === 'edit') fitCanvas(); });
+window.addEventListener('resize', () => { if (state.mode === 'edit') { fitCanvas(); placeNoteBox(); } });
 
 function render() {
   const { ctx, canvas } = ed;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(state.img, 0, 0);
-  ShotDraw.drawAnnotations(ctx, state.annotations);
-  if (state.drawing) ShotDraw.drawAnnotations(ctx, [state.drawing]);
+  state.hits = [];
+  const list = state.drawing ? [...state.annotations, state.drawing] : state.annotations;
+  ShotDraw.drawAnnotations(ctx, list, { source: state.img, prefix: state.index, hits: state.hits, focus: state.noteFor });
 }
 
 function toImg(e) {
@@ -164,18 +174,97 @@ function toImg(e) {
   return [Math.max(0, Math.min(ed.canvas.width, x)), Math.max(0, Math.min(ed.canvas.height, y))];
 }
 
-function strokeWidth() { return ShotDraw.baseWidth(ed.canvas.width, ed.canvas.height); }
-function nextNumber() { return state.annotations.filter((a) => a.type === 'num').length + 1; }
+function toClient(x, y) {
+  const r = ed.canvas.getBoundingClientRect();
+  return [r.left + x / ed.canvas.width * r.width, r.top + y / ed.canvas.height * r.height];
+}
 
+function strokeWidth() { return ShotDraw.baseWidth(ed.canvas.width, ed.canvas.height); }
+
+// ---------------- заметки к меткам ----------------
+// Номер, который получит метка: свой, если уже есть, иначе следующий по порядку рисования.
+function labelOf(a) {
+  const map = ShotDraw.labelMap(state.annotations);
+  let k = map.get(a);
+  if (!k) {
+    k = 1;
+    for (const b of state.annotations) { if (b === a) break; if (map.has(b)) k++; }
+  }
+  return state.index != null ? `${state.index}.${k}` : String(k);
+}
+
+function anchorOf(a) {
+  if (a.type === 'num') return [a.x, a.y];
+  if (a.type === 'arrow') return [a.x1, a.y1];
+  return [Math.min(a.x1, a.x2), Math.max(a.y1, a.y2)];
+}
+
+function placeNoteBox() {
+  if (!state.noteFor) return;
+  const [ax, ay] = anchorOf(state.noteFor);
+  let [cx, cy] = toClient(ax, ay);
+  const bw = noteBox.offsetWidth || 380; const bh = noteBox.offsetHeight || 46;
+  cx = Math.max(12, Math.min(window.innerWidth - bw - 12, cx - 20));
+  cy += 22;
+  if (cy + bh > window.innerHeight - 140) cy = Math.max(12, cy - bh - 60);
+  noteBox.style.left = `${cx}px`;
+  noteBox.style.top = `${cy}px`;
+}
+
+function openNote(a) {
+  state.noteFor = a;
+  $('#noteLabel').textContent = labelOf(a);
+  noteInput.value = a.note || '';
+  noteBox.hidden = false;
+  placeNoteBox();
+  render();
+  noteInput.focus();
+  noteInput.select();
+}
+
+function closeNote(focusComment = true) {
+  if (!state.noteFor) return;
+  if (Voice.isActive()) Voice.stop();
+  const a = state.noteFor;
+  a.note = noteInput.value.trim();
+  if (!a.note) delete a.note;
+  state.noteFor = null;
+  noteBox.hidden = true;
+  render();
+  if (focusComment) comment.focus();
+}
+
+noteInput.addEventListener('input', () => {
+  if (!state.noteFor) return;
+  state.noteFor.note = noteInput.value;
+  $('#noteLabel').textContent = labelOf(state.noteFor);
+  render();
+});
+$('#noteDel').addEventListener('click', () => {
+  const a = state.noteFor;
+  if (!a) return;
+  state.annotations = state.annotations.filter((b) => b !== a);
+  state.noteFor = null;
+  noteBox.hidden = true;
+  render();
+  comment.focus();
+});
+noteMic.addEventListener('click', () => Voice.toggle(noteInput, noteMic));
+
+// ---------------- рисование ----------------
 ed.canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   e.preventDefault();
+  if (state.noteFor) closeNote(false);
   const [x, y] = toImg(e);
+  const hit = state.hits.find((h) => x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h);
+  if (hit) { openNote(hit.a); return; } // клик по номеру метки — редактировать её заметку
   const width = strokeWidth();
   const color = state.color;
   if (state.tool === 'num') {
-    state.annotations.push({ type: 'num', x, y, n: nextNumber(), color, width });
-    render();
+    const pin = { type: 'num', x, y, color, width };
+    state.annotations.push(pin);
+    openNote(pin);
     return;
   }
   if (state.tool === 'pen') state.drawing = { type: 'pen', points: [[x, y]], color, width };
@@ -193,12 +282,21 @@ window.addEventListener('mousemove', (e) => {
   render();
 });
 
-window.addEventListener('mouseup', () => {
+window.addEventListener('mouseup', (e) => {
   if (state.mode !== 'edit' || !state.drawing) return;
   const d = state.drawing; state.drawing = null;
   const tooSmall = d.type === 'pen' ? d.points.length < 2 : Math.hypot(d.x2 - d.x1, d.y2 - d.y1) < 4;
-  if (!tooSmall) state.annotations.push(d);
+  if (tooSmall) {
+    // просто клик: если попали по рамке или стрелке — открыть её заметку
+    const [x, y] = toImg(e);
+    const shape = ShotDraw.hitShape(state.annotations, x, y, Math.max(6, 10 / ed.scale));
+    render();
+    if (shape) openNote(shape);
+    return;
+  }
+  state.annotations.push(d);
   render();
+  if (d.type === 'rect' || d.type === 'arrow') openNote(d); // как в Snapik: нарисовал — сразу пишешь заметку
 });
 
 function setTool(t) {
@@ -221,7 +319,8 @@ for (const c of COLORS) {
 setColor(COLORS[0]);
 
 function undo() {
-  state.annotations.pop();
+  const a = state.annotations.pop();
+  if (a && a === state.noteFor) { state.noteFor = null; noteBox.hidden = true; }
   render();
 }
 $('#undo').addEventListener('click', undo);
@@ -242,11 +341,13 @@ function onVoiceKeyDown(e) {
   voiceKeyDownAt = performance.now();
   if (Voice.isActive()) { voiceStartedByKey = false; Voice.stop(); return; }
   voiceStartedByKey = true;
-  Voice.start(comment, mic);
+  // голос пишется туда, где стоит курсор: в заметку метки или в общий комментарий
+  if (document.activeElement === noteInput && state.noteFor) Voice.start(noteInput, noteMic);
+  else Voice.start(comment, mic);
 }
-// Удержание Ctrl+Пробел дольше 0,4 с = «рация»: отпустил — запись закончилась.
+// Удержание клавиши голоса дольше 0,4 с = «рация»: отпустил — запись закончилась.
 window.addEventListener('keyup', (e) => {
-  if (e.code !== 'Space' || !voiceStartedByKey) return;
+  if (!voiceStartedByKey || e.code !== Keys.parse(state.voiceKey).code) return;
   voiceStartedByKey = false;
   if (Voice.isActive() && performance.now() - voiceKeyDownAt > 400) Voice.stop();
 }, true);
@@ -263,6 +364,7 @@ async function done() {
   state.saving = true;
   $('#done').disabled = true;
   if (Voice.isActive()) await Voice.stop(); // дождаться распознанного текста
+  if (state.noteFor) closeNote(false);
   const t0 = performance.now();
   const payload = {
     id: state.editId,
@@ -272,11 +374,9 @@ async function done() {
     comment: comment.value.trim(),
   };
   const crop = state.editId ? null : state.img;
-  // Окно прячем сразу; PNG кодируется асинхронно (toBlob не блокирует окно), сохранение идёт в фоне.
+  // Окно прячем сразу; PNG кодируется в фоновом потоке, сохранение идёт в фоне.
   api.send('capture:hide');
-  if (crop) {
-    payload.png = await ShotDraw.encodePng(crop);
-  }
+  if (crop) payload.png = await ShotDraw.encodePng(crop);
   const tEnc = performance.now() - t0;
   await api.invoke('capture:save', payload);
   api.send('app:log', `save ${payload.width}x${payload.height} encode=${Math.round(tEnc)}ms total=${Math.round(performance.now() - t0)}ms`);
@@ -285,37 +385,45 @@ $('#done').addEventListener('click', done);
 
 function handleKey(e) {
   if (state.mode === 'idle') return;
-  if (e.ctrlKey && e.code === 'Space') { e.preventDefault(); if (state.mode === 'edit') onVoiceKeyDown(e); return; }
+  if (Keys.matches(e, state.voiceKey)) { e.preventDefault(); if (state.mode === 'edit') onVoiceKeyDown(e); return; }
+  const inNote = e.target === noteInput;
   if (e.key === 'Escape') {
     e.preventDefault();
     if (Voice.isActive()) { Voice.cancel(); return; } // Esc во время записи — только отменить запись
+    if (inNote || state.noteFor) { closeNote(); return; }
     cancel();
     return;
   }
   if (state.mode !== 'edit') return;
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); done(); return; } // Ctrl+Enter — сохранить откуда угодно
+  if (inNote) {
+    if (e.key === 'Enter') { e.preventDefault(); closeNote(); }
+    return; // остальное — обычный ввод заметки
+  }
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); done(); return; }
   if (e.target === comment) return; // остальные клавиши — обычный ввод текста
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  const k = e.key.toLowerCase();
-  const map = { a: 'arrow', ф: 'arrow', r: 'rect', к: 'rect', n: 'num', т: 'num', p: 'pen', з: 'pen' };
-  if (map[k]) { setTool(map[k]); e.preventDefault(); }
+  const tool = TOOL_KEYS[e.key.toLowerCase()];
+  if (tool) { setTool(tool); e.preventDefault(); }
   const digit = parseInt(e.key, 10);
   if (digit >= 1 && digit <= COLORS.length) setColor(COLORS[digit - 1]);
 }
 window.addEventListener('keydown', handleKey, true);
 
 // клик по фону редактора (не по холсту) → фокус на комментарий
-$('.stage').addEventListener('mousedown', (e) => { if (e.target === e.currentTarget) comment.focus(); });
+$('.stage').addEventListener('mousedown', (e) => { if (e.target === e.currentTarget) { closeNote(); comment.focus(); } });
 
 // ---------------- жизненный цикл окна ----------------
 function reset() {
   if (Voice.isActive()) Voice.cancel();
   state.mode = 'idle';
-  state.screen = null; state.img = null; state.editId = null;
-  state.annotations = []; state.drawing = null; state.saving = false;
+  state.screen = null; state.img = null; state.editId = null; state.index = null;
+  state.annotations = []; state.drawing = null; state.saving = false; state.hits = []; state.noteFor = null;
   sel.start = null; sel.cur = null;
   comment.value = '';
+  noteInput.value = '';
+  noteBox.hidden = true;
   $('#msg').textContent = '';
   $('#done').disabled = false;
   $('#selHint').style.display = '';
@@ -330,9 +438,12 @@ api.on('capture:reset', reset);
 
 api.on('capture:init', async (payload) => {
   reset();
+  state.index = payload.index ?? null;
+  if (payload.voiceKey) state.voiceKey = payload.voiceKey;
+  $('#voiceKeyHint').textContent = Keys.label(state.voiceKey);
   if (payload.mode === 'edit') {
     state.editId = payload.item.id;
-    state.annotations = payload.item.annotations || [];
+    state.annotations = (payload.item.annotations || []).map((a) => ({ ...a }));
     state.img = await ShotDraw.loadImage(payload.image);
     comment.value = payload.item.comment || '';
     enterEdit();

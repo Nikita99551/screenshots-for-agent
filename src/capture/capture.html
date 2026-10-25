@@ -48,6 +48,15 @@
   .field { position: relative; flex: 1; display: flex; }
   textarea { flex: 1; min-height: 56px; max-height: 160px; resize: none; background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius); color: var(--text); font: inherit; font-size: 15px; padding: 14px 56px 14px 16px; outline: none; line-height: 1.4; }
   .field .voice-btn { right: 12px; bottom: 12px; }
+  #noteBox { position: fixed; z-index: 10; display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 8px; background: var(--panel); border: 1px solid rgba(255, 90, 40, 0.55); border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.55); width: 380px; }
+  #noteBox[hidden] { display: none; }
+  #noteBox .lbl { flex: 0 0 auto; min-width: 30px; height: 24px; padding: 0 8px; border-radius: 12px; background: var(--accent); color: #fff; font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; }
+  #noteInput { flex: 1; min-width: 0; height: 32px; background: transparent; border: 0; outline: none; color: var(--text); font: inherit; font-size: 14px; }
+  #noteInput::placeholder { color: var(--muted); }
+  #noteBox .voice-btn { position: static; --vb-size: 28px; }
+  .note-del { width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+  .note-del:hover { background: rgba(255,255,255,.08); color: #ff8a80; }
+  .note-del svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   #msg { text-align: center; color: #ffc9c7; font-size: 12px; min-height: 0; }
   #msg:empty { display: none; }
   textarea:focus { border-color: rgba(255, 90, 40, 0.6); }
@@ -78,11 +87,14 @@
         <button class="tool" data-tool="rect" title="Рамка (R)">
           <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/></svg>Рамка <kbd>R</kbd>
         </button>
-        <button class="tool" data-tool="num" title="Номер (N)">
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M11 9l2-1v8"/></svg>Номер <kbd>N</kbd>
+        <button class="tool" data-tool="num" title="Метка: точка с номером и заметкой (M)">
+          <svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="10" rx="5"/><path d="M11 10l2-1v6"/></svg>Метка <kbd>M</kbd>
         </button>
         <button class="tool" data-tool="pen" title="Карандаш (P)">
           <svg viewBox="0 0 24 24"><path d="M4 20c4-7 6-9 9-9s2 4 4 4 3-6 3-6"/></svg>Карандаш <kbd>P</kbd>
+        </button>
+        <button class="tool" data-tool="blur" title="Размыть: спрятать пароли и личные данные (B)">
+          <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M4 14h16M9 4v16M14 4v16"/></svg>Размыть <kbd>B</kbd>
         </button>
       </div>
       <div class="group" id="colors"></div>
@@ -97,6 +109,13 @@
       <div id="canvasWrap"><canvas id="editCanvas"></canvas></div>
     </div>
 
+    <div id="noteBox" hidden>
+      <span class="lbl" id="noteLabel">1.1</span>
+      <input id="noteInput" type="text" placeholder="Заметка к метке: что здесь сделать?" autocomplete="off" spellcheck="true">
+      <button id="noteMic"></button>
+      <button class="note-del" id="noteDel" title="Удалить эту фигуру"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>
+    </div>
+
     <div class="bottom">
       <div class="bottom-inner">
         <div class="comment-row">
@@ -108,13 +127,14 @@
           <button class="btn primary" id="done">Готово <kbd>Enter</kbd></button>
         </div>
         <div id="msg"></div>
-        <div class="hint"><kbd>Enter</kbd> готово &nbsp;·&nbsp; <kbd>Ctrl+Пробел</kbd> голос &nbsp;·&nbsp; <kbd>Shift+Enter</kbd> новая строка &nbsp;·&nbsp; <kbd>Ctrl+Z</kbd> отменить разметку &nbsp;·&nbsp; <kbd>Esc</kbd> отмена</div>
+        <div class="hint"><kbd>Enter</kbd> готово &nbsp;·&nbsp; <kbd id="voiceKeyHint">Ctrl+Пробел</kbd> голос &nbsp;·&nbsp; клик по метке — заметка &nbsp;·&nbsp; <kbd>Ctrl+Z</kbd> отменить разметку &nbsp;·&nbsp; <kbd>Esc</kbd> отмена</div>
       </div>
     </div>
   </div>
 
   <link rel="stylesheet" href="../shared/voice.css">
   <script src="../shared/draw.js"></script>
+  <script src="../shared/keys.js"></script>
   <script src="../shared/voice.js"></script>
   <script src="capture.js"></script>
 </body>
